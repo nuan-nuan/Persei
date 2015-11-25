@@ -29,7 +29,7 @@ public class StickyHeaderView: UIView {
         self.init(frame: CGRect(x: 0, y: 0, width: 320, height: DefaultContentHeight))
     }
     
-    required public init(coder aDecoder: NSCoder) {
+    required public init?(coder aDecoder: NSCoder) {
         super.init(coder: aDecoder)
         commonInit()
     }
@@ -37,15 +37,21 @@ public class StickyHeaderView: UIView {
     // MARK: - View lifecycle
     public override func willMoveToSuperview(newSuperview: UIView?) {
         super.willMoveToSuperview(newSuperview)
-        scrollView = nil
+        
+        if newSuperview == nil, let view = superview as? UIScrollView {
+            view.removeObserver(self, forKeyPath: "contentOffset", context: &ContentOffsetContext)
+            view.panGestureRecognizer.removeTarget(self, action: "handlePan:")
+            appliedInsets = UIEdgeInsetsZero
+        }
     }
     
     public override func didMoveToSuperview() {
         super.didMoveToSuperview()
         
-        if superview != nil {
-            scrollView = superview as? UIScrollView
-            scrollView.sendSubviewToBack(self)
+        if let view = superview as? UIScrollView {
+            view.addObserver(self, forKeyPath: "contentOffset", options: [.Initial, .New], context: &ContentOffsetContext)
+            view.panGestureRecognizer.addTarget(self, action: "handlePan:")
+            view.sendSubviewToBack(self)
         }
     }
 
@@ -65,7 +71,7 @@ public class StickyHeaderView: UIView {
             oldValue?.removeFromSuperview()
             if let view = contentView {
                 view.frame = contentContainer.bounds
-                view.autoresizingMask = .FlexibleWidth | .FlexibleHeight
+                view.autoresizingMask = [.FlexibleWidth, .FlexibleHeight]
                 contentContainer.addSubview(view)
                 contentContainer.sendSubviewToBack(view)
             }
@@ -99,22 +105,10 @@ public class StickyHeaderView: UIView {
     }
     
     // MARK: - ScrollView
-    private weak var scrollView: UIScrollView! {
-        willSet {
-            self.scrollView?.removeObserver(self, forKeyPath: "contentOffset", context: &ContentOffsetContext)
-            self.scrollView?.panGestureRecognizer.removeTarget(self, action: "handlePan:")
-            
-            appliedInsets = UIEdgeInsetsZero
-        }
-        
-        didSet {
-            scrollView?.addObserver(self, forKeyPath: "contentOffset", options: .Initial | .New, context: &ContentOffsetContext)
-            scrollView?.panGestureRecognizer.addTarget(self, action: "handlePan:")
-        }
-    }
+    private var scrollView: UIScrollView! { return superview as! UIScrollView }
     
     // MARK: - KVO
-    public override func observeValueForKeyPath(keyPath: String, ofObject object: AnyObject, change: [NSObject : AnyObject], context: UnsafeMutablePointer<Void>) {
+    public override func observeValueForKeyPath(keyPath: String?, ofObject object: AnyObject?, change: [String : AnyObject]?, context: UnsafeMutablePointer<Void>) {
         if context == &ContentOffsetContext {
             didScroll()
         } else {
@@ -137,7 +131,7 @@ public class StickyHeaderView: UIView {
     
     private func setRevealed(revealed: Bool, animated: Bool, adjustContentOffset adjust: Bool) {
         if animated {
-            UIView.animateWithDuration(0.2, delay: 0, options: .BeginFromCurrentState | .CurveEaseInOut, animations: {
+            UIView.animateWithDuration(0.2, delay: 0, options: [.BeginFromCurrentState, .CurveEaseInOut], animations: {
                 self.revealed = revealed
             }, completion: { completed in
                 if adjust {
@@ -212,8 +206,6 @@ public class StickyHeaderView: UIView {
     }
     
     private func didScroll() {
-        let oldProgress = fractionRevealed()
-
         layoutToFit()
         layoutIfNeeded()
         
@@ -265,7 +257,7 @@ public class StickyHeaderView: UIView {
     }
 
     private func layoutToFit() {
-        var origin = scrollView.contentOffset.y + scrollView.contentInset.top - appliedInsets.top
+        let origin = scrollView.contentOffset.y + scrollView.contentInset.top - appliedInsets.top
         frame.origin.y = origin
         
         sizeToFit()
